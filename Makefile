@@ -1,8 +1,8 @@
 CXXFLAGS =	-O2 -g -Wall -fmessage-length=0
 
-OBJS =		main.o VTRWorker.o
+OBJS =		main.o VTRWorker.o sdk/DeckLinkAPIDispatch.o
 
-LIBS =
+LIBS = -ldl -lpthread
 
 TARGET =	vtr-worker
 
