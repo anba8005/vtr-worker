@@ -43,15 +43,32 @@ private:
 	std::mutex connected_mutex;
 
 	void worker();
-	std::mutex mutex;
+	std::recursive_mutex mutex;
 	std::thread thread;
-	std::condition_variable condition;
+	std::condition_variable_any condition;
 
 	std::string state;
 	std::string lastState;
+	std::string mode;
+	std::string lastMode;
+	bool isControlMode();
+
+
 	long timecode;
 	long lastTimecode;
 	long factor;
+	long conformTimecode(long timecode);
+
+	long seekTimecode;
+	void seekToTimecode();
+	long calculateFactor(long delta, long factor);
+
+	long actionIn;
+	long actionOut;
+	void captureActionCheck();
+	void exportActionCheck();
+
+
 
 };
 

@@ -34,7 +34,7 @@ public:
 	virtual void stepForward() = 0;
 
 	virtual void startCapture(long in, long out) = 0;
-	virtual void startExport(long in, long out) = 0;
+	virtual void startExport(long in, long out = -1) = 0;
 
 	void print_commit();
 protected:
