@@ -68,6 +68,12 @@ void run(std::shared_ptr<AWorker> worker) {
 				} catch (std::exception& e) {
 					cerr << "seek : " << string(e.what()) << std::endl;
 				}
+			} else if (command.substr(0, 8) == "SHUTTLE:") {
+				try {
+					worker->shuttle(std::atof(command.substr(8).c_str()));
+				} catch (std::exception& e) {
+					cerr << "shuttle : " << string(e.what()) << std::endl;
+				}
 			} else if (command.substr(0, 8) == "CAPTURE:") {
 				std::vector<std::string> params = split(command, ':');
 				if (params.size() == 3) {

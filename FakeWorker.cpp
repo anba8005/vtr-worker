@@ -7,10 +7,10 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <cmath>
 #include "FakeWorker.h"
 
 #define TIMECODE_MAX 2160000 // 24h @ 25fps
-//#define TIMECODE_MAX 100
 
 FakeWorker::FakeWorker() {
 	connected = false;
@@ -90,6 +90,7 @@ void FakeWorker::shuttle(double rate) {
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	if (!isControlMode())
 		return;
+	factor = std::lround((double)25 * rate);
 }
 
 void FakeWorker::jog(double rate) {
@@ -112,7 +113,7 @@ void FakeWorker::rew() {
 	if (!isControlMode())
 		return;
 	state = "SEEKING";
-	factor = -10;
+	factor = -128;
 	seekTimecode = -1;
 }
 
@@ -121,7 +122,7 @@ void FakeWorker::ff() {
 	if (!isControlMode())
 		return;
 	state = "SEEKING";
-	factor = 10;
+	factor = 128;
 	seekTimecode = -1;
 }
 
