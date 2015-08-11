@@ -78,7 +78,7 @@ void run(std::shared_ptr<AWorker> worker) {
 				std::vector<std::string> params = split(command, ':');
 				if (params.size() == 3) {
 					try {
-						worker->startCapture(std::atol(params[0].c_str()), std::atol(params[1].c_str()));
+						worker->startCapture(std::atol(params[1].c_str()), std::atol(params[2].c_str()));
 					} catch (std::exception& e) {
 						cerr << "capture : " << string(e.what()) << std::endl;
 					}
@@ -101,7 +101,7 @@ void run(std::shared_ptr<AWorker> worker) {
 					cerr << "capture : invalid parameters " << command << std::endl;
 				}
 			} else {
-				cerr << "Invalid command -> " << command << "\n";
+				cerr << "Invalid command ->" << command << "<-\n";
 			}
 		} else {
 			// wait

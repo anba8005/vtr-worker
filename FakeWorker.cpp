@@ -90,7 +90,12 @@ void FakeWorker::shuttle(double rate) {
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	if (!isControlMode())
 		return;
-	factor = std::lround((double)25 * rate);
+	if (rate == 0) {
+		state = "STILL";
+	} else {
+		state = "SEEKING";
+	}
+	factor = std::lround(rate);
 }
 
 void FakeWorker::jog(double rate) {
