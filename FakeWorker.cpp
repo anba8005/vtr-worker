@@ -73,7 +73,9 @@ void FakeWorker::stop() {
 		state = "STOPPED";
 		mode = "CONTROL";
 	} else if (mode == "EXPORT") {
-
+		factor = 0;
+		state = "STOPPED";
+		mode = "CONTROL";
 	}
 }
 
