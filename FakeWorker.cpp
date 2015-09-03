@@ -278,7 +278,7 @@ long FakeWorker::calculateFactor(long delta, long factor) {
 	if (std::abs(factor) <= 1)
 		return (delta > 0 ? 1 : -1);
 	long rate = delta / factor;
-	std::cerr << rate << " @ " << factor << std::endl;
+	//std::cerr << rate << " @ " << factor << std::endl;
 	if (std::abs(rate) > 0) {
 		return factor;
 	} else {

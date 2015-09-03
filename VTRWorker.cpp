@@ -10,9 +10,22 @@
 #include <ctime>
 #include <cstring>
 
+#define TIMECODE_MAX 2160000 // 24h @ 25fps
+
 VTRWorker::VTRWorker(int id) :
 		id(id) {
 	connected = false;
+	state = "NONE";
+	lastState = "NONE";
+	timecode = 0;
+	lastTimecode = -1;
+	seekTimecode = -1;
+	mode = "CONTROL";
+	lastMode = "NONE";
+	actionIn = 0;
+	actionOut = 0;
+	bmdState = "NONE";
+	bmdTimecode = 0;
 }
 
 VTRWorker::~VTRWorker() {
@@ -26,7 +39,7 @@ void VTRWorker::release(IUnknown* o) {
 
 void VTRWorker::open() {
 	// lock
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 
 	// get decklink iterator
 	std::shared_ptr<IDeckLinkIterator> deckLinkIterator(CreateDeckLinkIteratorInstance(), &release);
@@ -86,7 +99,7 @@ void VTRWorker::open() {
 }
 
 void VTRWorker::close() {
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	//
 	if (isConnected()) {
 		deckLinkDeckControl->Abort();
@@ -100,53 +113,59 @@ void VTRWorker::close() {
 		deckLinkDeckControl.reset();
 		deckLink.reset();
 	}
+	lock.unlock();
+	std::unique_lock<std::mutex> connected_lock(connected_mutex);
+	connected = false;
+	connected_lock.unlock();
+	thread.join();
 }
 
 void VTRWorker::play() {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
-	if (deckLinkDeckControl->Play(&error) != S_OK) {
+	if (deckLinkDeckControl->Play(&error) != S_OK)
 		throwBMDErrorException("Error starting decklink deck", error);
-	}
+	seekTimecode = -1;
 }
 
 void VTRWorker::pause() {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
-	if (deckLinkDeckControl->Stop(&error) != S_OK) {
-		throwBMDErrorException("Error stopping decklink deck", error);
-	}
+	if (deckLinkDeckControl->Stop(&error) != S_OK)
+		throwBMDErrorException("Error pausing decklink deck", error);
+	seekTimecode = -1;
 }
 
 void VTRWorker::stop() {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
-	if (deckLinkDeckControl->Stop(&error) != S_OK) {
+	if (deckLinkDeckControl->Stop(&error) != S_OK)
 		throwBMDErrorException("Error stopping decklink deck", error);
-	}
+	seekTimecode = -1;
+	mode = "CONTROL";
 }
 
 void VTRWorker::eject() {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
-	if (deckLinkDeckControl->Eject(&error) != S_OK) {
+	if (deckLinkDeckControl->Eject(&error) != S_OK)
 		throwBMDErrorException("Error ejecting decklink deck", error);
-	}
+	seekTimecode = -1;
+	mode = "CONTROL";
 }
 
 void VTRWorker::shuttle(double rate) {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
-
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Shuttle(rate, &error) != S_OK)
 		throwBMDErrorException("Error shuttling decklink deck", error);
@@ -155,7 +174,7 @@ void VTRWorker::shuttle(double rate) {
 void VTRWorker::jog(double rate) {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Jog(rate, &error) != S_OK)
 		throwBMDErrorException("Error joging decklink deck", error);
@@ -164,61 +183,64 @@ void VTRWorker::jog(double rate) {
 void VTRWorker::seek(long timecode) {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
-	BMDDeckControlError error;
-	if (deckLinkDeckControl->GoToTimecode(BMDTools::toBCD(timecode), &error) != S_OK)
-		throwBMDErrorException("Error seeking decklink deck", error);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
+	seekTimecode = timecode;
 }
 
 void VTRWorker::rew() {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Rewind(true, &error) != S_OK)
 		throwBMDErrorException("Error REW'ing decklink deck", error);
+	seekTimecode = -1;
 }
 
 void VTRWorker::ff() {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->FastForward(true, &error) != S_OK)
 		throwBMDErrorException("Error FF'ing decklink deck", error);
+	seekTimecode = -1;
 }
 
 void VTRWorker::stepBack() {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->StepBack(&error) != S_OK)
 		throwBMDErrorException("Error stepping back decklink deck", error);
+	seekTimecode = -1;
 }
 
 void VTRWorker::stepForward() {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->StepForward(&error) != S_OK)
 		throwBMDErrorException("Error stepping forward decklink deck", error);
+	seekTimecode = -1;
 }
 
 void VTRWorker::startCapture(long in, long out) {
-	if (!isConnected())
+	if (!isControlMode())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
-	BMDDeckControlError error;
-	if (deckLinkDeckControl->StartCapture(false, BMDTools::toBCD(in), BMDTools::toBCD(out), &error) != S_OK)
-		throwBMDErrorException("Error starting decklink deck capture", error);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
+	actionIn = conformTimecode(in);
+	actionOut = conformTimecode(out);
+	seek(conformTimecode(in - 100));
+	mode = "CAPTURE";
 }
 
 void VTRWorker::startExport(long in, long out) {
 	if (!isConnected())
 		return;
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::recursive_mutex> lock(mutex);
 
 	// set export timecode (via rs422 deck command)
 	std::shared_ptr<uint8_t> timecodePtr = std::shared_ptr<uint8_t>(new uint8_t[6]);
@@ -233,16 +255,21 @@ void VTRWorker::startExport(long in, long out) {
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->CrashRecordStart(&error) != S_OK)
 		throwBMDErrorException("Error starting decklink deck assemble export", error);
+
+	//
+	mode = "EXPORT";
+	if (out != -1)
+		actionOut = conformTimecode(out);
+	print("ACTION:EXPORT:START");
 }
 
 void VTRWorker::sendDeckCommand(uint8_t* input, size_t inputSize) {
 	uint32_t outputBufferSize = 1024;
-	std::shared_ptr < uint8_t > output = std::shared_ptr < uint8_t > (new uint8_t[outputBufferSize]);
+	std::shared_ptr<uint8_t> output = std::shared_ptr<uint8_t>(new uint8_t[outputBufferSize]);
 	uint32_t outputSize;
 	BMDDeckControlError error;
 
-	if (deckLinkDeckControl->SendCommand(input, inputSize, output.get(), &outputSize, outputBufferSize, &error)
-			!= S_OK)
+	if (deckLinkDeckControl->SendCommand(input, inputSize, output.get(), &outputSize, outputBufferSize, &error) != S_OK)
 		throwBMDErrorException("Error sending command", error);
 }
 
@@ -253,6 +280,107 @@ void VTRWorker::throwBMDErrorException(std::string message, BMDDeckControlError 
 bool VTRWorker::isConnected() {
 	std::unique_lock<std::mutex> connected_lock(connected_mutex);
 	return connected;
+}
+
+bool VTRWorker::isControlMode() {
+	return isConnected() && mode == "CONTROL";
+}
+
+void VTRWorker::worker() {
+	//
+	while (true) {
+		std::unique_lock<std::recursive_mutex> lock(mutex);
+		if (!isConnected())
+			break;
+		//
+		std::unique_lock<std::mutex> bmdTimecodeLock(bmdTimecodeMutex);
+		timecode = bmdTimecode;
+		bmdTimecodeLock.unlock();
+		//
+		std::unique_lock<std::mutex> bmdStateLock(bmdStateMutex);
+		state = bmdState;
+		bmdStateLock.unlock();
+		//
+		if (seekTimecode != -1)
+			seekToTimecode();
+		//
+		if (mode == "CAPTURE") {
+			captureActionCheck();
+		} else if (mode == "EXPORT") {
+			exportActionCheck();
+		}
+		//
+		if (state != lastState) {
+			print("STATE:" + state);
+			lastState = state;
+		}
+		if (timecode != lastTimecode) {
+			print("TIMECODE:" + std::to_string(timecode));
+			lastTimecode = timecode;
+		}
+		//
+		condition.wait_for(lock, std::chrono::milliseconds(10));
+	}
+}
+
+long VTRWorker::conformTimecode(long timecode) {
+	if (timecode < 0) {
+		return TIMECODE_MAX + timecode;
+	} else if (timecode >= TIMECODE_MAX) {
+		return timecode - TIMECODE_MAX;
+	} else {
+		return timecode;
+	}
+}
+
+void VTRWorker::seekToTimecode() {
+	// calculate delta from current position to target
+	// choose shorter path
+	long delta = seekTimecode - this->timecode;
+	if (delta != 0) {
+		long delta_overflow = seekTimecode - (this->timecode + (delta > 0 ? TIMECODE_MAX : -TIMECODE_MAX));
+		if (std::abs(delta) > std::abs(delta_overflow)) {
+			delta = delta_overflow;
+		}
+	}
+	//
+	if (delta == 0) {
+		pause();
+	} else {
+		shuttle(calculateFactor(delta, (delta > 0 ? 32 : -32)));
+	}
+}
+
+void VTRWorker::captureActionCheck() {
+	if (state == "STILL" && timecode == conformTimecode(actionIn - 100)) {
+		play();
+	} else if (state == "PLAYING" && timecode == actionIn) {
+		print("ACTION:CAPTURE:START");
+	} else if (state == "PLAYING" && timecode == actionOut) {
+		print("ACTION:CAPTURE:COMPLETE");
+		mode = "CONTROL";
+		stop();
+	}
+}
+
+void VTRWorker::exportActionCheck() {
+	if (state == "RECORDING" && timecode == actionOut) {
+		print("ACTION:EXPORT:COMPLETE");
+		mode = "CONTROL";
+		stop();
+	}
+}
+
+long VTRWorker::calculateFactor(long delta, long factor) {
+	if (std::abs(factor) <= 1)
+		return (delta > 0 ? 1 : -1);
+	long rate = delta / factor;
+	//std::cerr << rate << " @ " << factor << std::endl;
+	if (std::abs(rate) > 0) {
+		return factor;
+	} else {
+		return calculateFactor(delta, factor / 2);
+	}
 }
 
 std::string VTRWorker::bmdErrorToString(BMDDeckControlError error) {
@@ -290,25 +418,27 @@ std::string VTRWorker::bmdErrorToString(BMDDeckControlError error) {
 }
 
 HRESULT VTRWorker::TimecodeUpdate(BMDTimecodeBCD currentTimecode) {
-	print("TIMECODE:" + BMDTools::fromBCD(currentTimecode));
+	std::unique_lock<std::mutex> lock(bmdTimecodeMutex);
+	bmdTimecode = BMDTools::fromBCD(currentTimecode);
 	return S_OK;
 }
 
 HRESULT VTRWorker::VTRControlStateChanged(BMDDeckControlVTRControlState newState, BMDDeckControlError error) {
+	std::unique_lock<std::mutex> lock(bmdStateMutex);
 
 	if (newState == bmdDeckControlNotInVTRControlMode) {
-		print("STATE:NONE");
+		bmdState = "NONE";
 	} else if (newState == bmdDeckControlVTRControlPlaying) {
-		print("STATE:PLAYING");
+		bmdState = "PLAYING";
 	} else if (newState == bmdDeckControlVTRControlRecording) {
-		print("STATE:RECORDING");
+		bmdState = "STATE:RECORDING";
 	} else if (newState == bmdDeckControlVTRControlStill) {
-		print("STATE:STILL");
+		bmdState = "STILL";
 	} else if (newState == bmdDeckControlVTRControlShuttleForward || newState == bmdDeckControlVTRControlShuttleReverse
 			|| newState == bmdDeckControlVTRControlJogForward || newState == bmdDeckControlVTRControlJogReverse) {
-		print("STATE:SEEKING");
+		bmdState = "SEEKING";
 	} else if (newState == bmdDeckControlVTRControlStopped) {
-		print("STATE:STOPPED");
+		bmdState = "STOPPED";
 	}
 
 	if (error != bmdDeckControlNoError)
@@ -318,17 +448,18 @@ HRESULT VTRWorker::VTRControlStateChanged(BMDDeckControlVTRControlState newState
 }
 
 HRESULT VTRWorker::DeckControlEventReceived(BMDDeckControlEvent event, BMDDeckControlError error) {
-	if (event == bmdDeckControlPrepareForCaptureEvent) {
-		print("ACTION:CAPTURE:START");
-	} else if (event == bmdDeckControlCaptureCompleteEvent) {
-		print("ACTION:CAPTURE:COMPLETE");
-	} else if (event == bmdDeckControlAbortedEvent) {
-		print("ACTION:ABORT");
-	} else if (event == bmdDeckControlPrepareForExportEvent) {
-		print("ACTION:EXPORT:START");
-	} else if (event == bmdDeckControlExportCompleteEvent) {
-		print("ACTION:EXPORT:COMPLETE");
-	}
+	/*if (event == bmdDeckControlPrepareForCaptureEvent) {
+	 print("ACTION:CAPTURE:START");
+	 } else if (event == bmdDeckControlCaptureCompleteEvent) {
+	 print("ACTION:CAPTURE:COMPLETE");
+	 } else if (event == bmdDeckControlAbortedEvent) {
+	 print("ACTION:ABORT");
+	 } else if (event == bmdDeckControlPrepareForExportEvent) {
+	 print("ACTION:EXPORT:START");
+	 } else if (event == bmdDeckControlExportCompleteEvent) {
+	 print("ACTION:EXPORT:COMPLETE");
+	 } */
+	std::cerr << "control event received " << event << std::endl;
 	return S_OK;
 }
 
@@ -337,9 +468,12 @@ HRESULT VTRWorker::DeckControlStatusChanged(BMDDeckControlStatusFlags flags, uin
 	if ((flags & bmdDeckControlStatusDeckConnected) && (flags & bmdDeckControlStatusRemoteMode)) {
 		connected = true;
 		print("CONNECTED");
+		thread = std::thread(&VTRWorker::worker, this);
+		std::cerr << "CINNECTED" << std::endl;
 	} else {
 		connected = false;
 		print("DISCONNECTED");
+		std::cerr << "DISCONNECTED" << std::endl;
 	}
 	connected_condition.notify_one();
 	return S_OK;

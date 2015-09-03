@@ -14,11 +14,12 @@
 #include <vector>
 #include <memory>
 #include <condition_variable>
+#include <thread>
 
 #include "AWorker.h"
 #include "sdk/DeckLinkAPI.h"
 
-class VTRWorker : public AWorker, public IDeckLinkDeckControlStatusCallback {
+class VTRWorker: public AWorker, public IDeckLinkDeckControlStatusCallback {
 public:
 	VTRWorker(int id);
 	virtual ~VTRWorker();
@@ -46,12 +47,41 @@ private:
 	int id;
 	std::shared_ptr<IDeckLink> deckLink;
 	std::shared_ptr<IDeckLinkDeckControl> deckLinkDeckControl;
-	std::mutex mutex;
 
 	bool isConnected();
 	bool connected;
 	std::mutex connected_mutex;
 	std::condition_variable connected_condition;
+
+	void worker();
+	std::recursive_mutex mutex;
+	std::thread thread;
+	std::condition_variable_any condition;
+
+	std::string state;
+	std::string lastState;
+	std::string mode;
+	std::string lastMode;
+	bool isControlMode();
+
+	long timecode;
+	long lastTimecode;
+	long conformTimecode(long timecode);
+
+	long seekTimecode;
+	void seekToTimecode();
+	long calculateFactor(long delta, long factor);
+
+	long actionIn;
+	long actionOut;
+	void captureActionCheck();
+	void exportActionCheck();
+
+	long bmdTimecode;
+	std::mutex bmdTimecodeMutex;
+
+	std::string bmdState;
+	std::mutex bmdStateMutex;
 
 	static void release(IUnknown* o);
 
@@ -73,12 +103,9 @@ public:
 
 	// IDeckLinkDeckControlStatusCallback interface
 	virtual HRESULT TimecodeUpdate(BMDTimecodeBCD currentTimecode);
-	virtual HRESULT VTRControlStateChanged(
-			BMDDeckControlVTRControlState newState, BMDDeckControlError error);
-	virtual HRESULT DeckControlEventReceived(BMDDeckControlEvent event,
-			BMDDeckControlError error);
-	virtual HRESULT DeckControlStatusChanged(BMDDeckControlStatusFlags flags,
-			uint32_t mask);
+	virtual HRESULT VTRControlStateChanged(BMDDeckControlVTRControlState newState, BMDDeckControlError error);
+	virtual HRESULT DeckControlEventReceived(BMDDeckControlEvent event, BMDDeckControlError error);
+	virtual HRESULT DeckControlStatusChanged(BMDDeckControlStatusFlags flags, uint32_t mask);
 };
 
 #endif /* VTRWORKER_H_ */
