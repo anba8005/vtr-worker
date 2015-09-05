@@ -24,7 +24,7 @@ VTRWorker::VTRWorker(int id) :
 	lastMode = "NONE";
 	actionIn = 0;
 	actionOut = 0;
-	bmdState = "NONE";
+	bmdState = "STOPPED";
 	bmdTimecode = 0;
 }
 
@@ -86,16 +86,6 @@ void VTRWorker::open() {
 	if (!connected)
 		throw std::runtime_error("Unable to connect VTR");
 	connected_lock.unlock();
-
-	// get current
-	BMDDeckControlMode modeCurrent;
-	BMDDeckControlVTRControlState state;
-	BMDDeckControlStatusFlags flags;
-	if (deckLinkDeckControl->GetCurrentState(&modeCurrent, &state, &flags) == S_OK) {
-		VTRControlStateChanged(state, bmdDeckControlNoError);
-	} else {
-		throw std::runtime_error("Unable to get decklink deck state");
-	}
 }
 
 void VTRWorker::close() {
@@ -427,7 +417,7 @@ HRESULT VTRWorker::VTRControlStateChanged(BMDDeckControlVTRControlState newState
 	std::unique_lock<std::mutex> lock(bmdStateMutex);
 
 	if (newState == bmdDeckControlNotInVTRControlMode) {
-		bmdState = "NONE";
+		bmdState = "STOPPED";
 	} else if (newState == bmdDeckControlVTRControlPlaying) {
 		bmdState = "PLAYING";
 	} else if (newState == bmdDeckControlVTRControlRecording) {
