@@ -1,3 +1,5 @@
+#ifndef WIN32
+
 /* -LICENSE-START-
 ** Copyright (c) 2009 Blackmagic Design
 **
@@ -29,7 +31,7 @@
 #include <pthread.h>
 #include <dlfcn.h>
 
-#include "../sdk/DeckLinkAPI.h"
+#include "DeckLinkAPI.h"
 
 #define kDeckLinkAPI_Name "libDeckLinkAPI.so"
 #define KDeckLinkPreviewAPI_Name "libDeckLinkPreviewAPI.so"
@@ -38,7 +40,6 @@ typedef IDeckLinkIterator* (*CreateIteratorFunc)(void);
 typedef IDeckLinkAPIInformation* (*CreateAPIInformationFunc)(void);
 typedef IDeckLinkGLScreenPreviewHelper* (*CreateOpenGLScreenPreviewHelperFunc)(void);
 typedef IDeckLinkVideoConversion* (*CreateVideoConversionInstanceFunc)(void);
-typedef IDeckLinkDiscovery* (*CreateDeckLinkDiscoveryInstanceFunc)(void);
 
 static pthread_once_t					gDeckLinkOnceControl = PTHREAD_ONCE_INIT;
 static pthread_once_t					gPreviewOnceControl = PTHREAD_ONCE_INIT;
@@ -49,7 +50,6 @@ static CreateIteratorFunc					gCreateIteratorFunc = NULL;
 static CreateAPIInformationFunc				gCreateAPIInformationFunc = NULL;
 static CreateOpenGLScreenPreviewHelperFunc	gCreateOpenGLPreviewFunc = NULL;
 static CreateVideoConversionInstanceFunc	gCreateVideoConversionFunc	= NULL;
-static CreateDeckLinkDiscoveryInstanceFunc	gCreateDeckLinkDiscoveryFunc = NULL;
 
 void	InitDeckLinkAPI (void)
 {
@@ -64,7 +64,7 @@ void	InitDeckLinkAPI (void)
 	
 	gLoadedDeckLinkAPI = true;
 	
-	gCreateIteratorFunc = (CreateIteratorFunc)dlsym(libraryHandle, "CreateDeckLinkIteratorInstance_0002");
+	gCreateIteratorFunc = (CreateIteratorFunc)dlsym(libraryHandle, "CreateDeckLinkIteratorInstance_0001");
 	if (!gCreateIteratorFunc)
 		fprintf(stderr, "%s\n", dlerror());
 	gCreateAPIInformationFunc = (CreateAPIInformationFunc)dlsym(libraryHandle, "CreateDeckLinkAPIInformationInstance_0001");
@@ -72,9 +72,6 @@ void	InitDeckLinkAPI (void)
 		fprintf(stderr, "%s\n", dlerror());
 	gCreateVideoConversionFunc = (CreateVideoConversionInstanceFunc)dlsym(libraryHandle, "CreateVideoConversionInstance_0001");
 	if (!gCreateVideoConversionFunc)
-		fprintf(stderr, "%s\n", dlerror());
-	gCreateDeckLinkDiscoveryFunc = (CreateDeckLinkDiscoveryInstanceFunc)dlsym(libraryHandle, "CreateDeckLinkDiscoveryInstance_0001");
-	if (!gCreateDeckLinkDiscoveryFunc)
 		fprintf(stderr, "%s\n", dlerror());
 }
 
@@ -136,11 +133,4 @@ IDeckLinkVideoConversion* CreateVideoConversionInstance (void)
 	return gCreateVideoConversionFunc();
 }
 
-IDeckLinkDiscovery* CreateDeckLinkDiscoveryInstance (void)
-{
-	pthread_once(&gDeckLinkOnceControl, InitDeckLinkAPI);
-	
-	if (gCreateDeckLinkDiscoveryFunc == NULL)
-		return NULL;
-	return gCreateDeckLinkDiscoveryFunc();
-}
+#endif

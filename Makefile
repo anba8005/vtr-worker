@@ -1,4 +1,4 @@
-CXXFLAGS =	-O2 -std=c++11 -g -Wall -fmessage-length=0
+CXXFLAGS =	-O2 -std=c++0x -g -Wall -fmessage-length=0
 
 OBJS =		main.o AWorker.o VTRWorker.o FakeWorker.o BMDTools.o sdk/DeckLinkAPIDispatch.o
 

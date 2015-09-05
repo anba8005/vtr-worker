@@ -434,8 +434,7 @@ HRESULT VTRWorker::VTRControlStateChanged(BMDDeckControlVTRControlState newState
 		bmdState = "STATE:RECORDING";
 	} else if (newState == bmdDeckControlVTRControlStill) {
 		bmdState = "STILL";
-	} else if (newState == bmdDeckControlVTRControlShuttleForward || newState == bmdDeckControlVTRControlShuttleReverse
-			|| newState == bmdDeckControlVTRControlJogForward || newState == bmdDeckControlVTRControlJogReverse) {
+	} else if (newState == bmdDeckControlVTRControlSeeking) {
 		bmdState = "SEEKING";
 	} else if (newState == bmdDeckControlVTRControlStopped) {
 		bmdState = "STOPPED";
