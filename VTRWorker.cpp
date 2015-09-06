@@ -26,6 +26,7 @@ VTRWorker::VTRWorker(int id) :
 	actionOut = 0;
 	bmdState = "STOPPED";
 	bmdTimecode = 0;
+	lastShuttleRate = -100;
 }
 
 VTRWorker::~VTRWorker() {
@@ -156,9 +157,15 @@ void VTRWorker::shuttle(double rate) {
 	if (!isConnected())
 		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
+	if (lastShuttleRate == rate)
+		return;
+
 	BMDDeckControlError error;
-	if (deckLinkDeckControl->Shuttle(rate, &error) != S_OK)
+	if (deckLinkDeckControl->Shuttle(rate, &error) != S_OK) {
 		throwBMDErrorException("Error shuttling decklink deck", error);
+	} else {
+		lastShuttleRate = rate;
+	}
 }
 
 void VTRWorker::jog(double rate) {
@@ -337,7 +344,8 @@ void VTRWorker::seekToTimecode() {
 	if (delta == 0) {
 		pause();
 	} else {
-		shuttle(calculateFactor(delta, (delta > 0 ? 32 : -32)));
+		double rate = calculateFactor(delta, (delta > 0 ? 32*25 : -32*25)) / 25.0;
+		shuttle(rate);
 	}
 }
 
@@ -365,7 +373,6 @@ long VTRWorker::calculateFactor(long delta, long factor) {
 	if (std::abs(factor) <= 1)
 		return (delta > 0 ? 1 : -1);
 	long rate = delta / factor;
-	//std::cerr << rate << " @ " << factor << std::endl;
 	if (std::abs(rate) > 0) {
 		return factor;
 	} else {

@@ -66,6 +66,7 @@ private:
 
 	long timecode;
 	long lastTimecode;
+	double lastShuttleRate;
 	long conformTimecode(long timecode);
 
 	long seekTimecode;
