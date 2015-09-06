@@ -26,7 +26,7 @@ VTRWorker::VTRWorker(int id) :
 	actionOut = 0;
 	bmdState = "STOPPED";
 	bmdTimecode = 0;
-	lastShuttleRate = -100;
+	lastShuttleRate = INT8_MIN;
 }
 
 VTRWorker::~VTRWorker() {
@@ -119,6 +119,7 @@ void VTRWorker::play() {
 	if (deckLinkDeckControl->Play(&error) != S_OK)
 		throwBMDErrorException("Error starting decklink deck", error);
 	seekTimecode = -1;
+	lastShuttleRate = INT8_MIN;
 }
 
 void VTRWorker::pause() {
@@ -129,6 +130,7 @@ void VTRWorker::pause() {
 	if (deckLinkDeckControl->Stop(&error) != S_OK)
 		throwBMDErrorException("Error pausing decklink deck", error);
 	seekTimecode = -1;
+	lastShuttleRate = INT8_MIN;
 }
 
 void VTRWorker::stop() {
@@ -139,6 +141,7 @@ void VTRWorker::stop() {
 	if (deckLinkDeckControl->Stop(&error) != S_OK)
 		throwBMDErrorException("Error stopping decklink deck", error);
 	seekTimecode = -1;
+	lastShuttleRate = INT8_MIN;
 	mode = "CONTROL";
 }
 
@@ -150,6 +153,7 @@ void VTRWorker::eject() {
 	if (deckLinkDeckControl->Eject(&error) != S_OK)
 		throwBMDErrorException("Error ejecting decklink deck", error);
 	seekTimecode = -1;
+	lastShuttleRate = INT8_MIN;
 	mode = "CONTROL";
 }
 
@@ -182,6 +186,7 @@ void VTRWorker::seek(long timecode) {
 		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	seekTimecode = timecode;
+	lastShuttleRate = INT8_MIN;
 }
 
 void VTRWorker::rew() {
@@ -192,6 +197,7 @@ void VTRWorker::rew() {
 	if (deckLinkDeckControl->Rewind(true, &error) != S_OK)
 		throwBMDErrorException("Error REW'ing decklink deck", error);
 	seekTimecode = -1;
+	lastShuttleRate = INT8_MIN;
 }
 
 void VTRWorker::ff() {
@@ -202,6 +208,7 @@ void VTRWorker::ff() {
 	if (deckLinkDeckControl->FastForward(true, &error) != S_OK)
 		throwBMDErrorException("Error FF'ing decklink deck", error);
 	seekTimecode = -1;
+	lastShuttleRate = INT8_MIN;
 }
 
 void VTRWorker::stepBack() {
@@ -212,6 +219,7 @@ void VTRWorker::stepBack() {
 	if (deckLinkDeckControl->StepBack(&error) != S_OK)
 		throwBMDErrorException("Error stepping back decklink deck", error);
 	seekTimecode = -1;
+	lastShuttleRate = INT8_MIN;
 }
 
 void VTRWorker::stepForward() {
@@ -222,6 +230,7 @@ void VTRWorker::stepForward() {
 	if (deckLinkDeckControl->StepForward(&error) != S_OK)
 		throwBMDErrorException("Error stepping forward decklink deck", error);
 	seekTimecode = -1;
+	lastShuttleRate = INT8_MIN;
 }
 
 void VTRWorker::startCapture(long in, long out) {
