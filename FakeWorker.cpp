@@ -171,8 +171,11 @@ void FakeWorker::startExport(long in, long out) {
 	factor = 1;
 	mode = "EXPORT";
 	timecode = conformTimecode(in);
-	if (out != -1)
+	if (out != -1) {
 		actionOut = conformTimecode(out);
+	} else {
+		actionOut = INT32_MAX;
+	}
 	print("ACTION:EXPORT:START");
 }
 

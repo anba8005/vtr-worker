@@ -264,8 +264,11 @@ void VTRWorker::startExport(long in, long out) {
 
 	//
 	mode = "EXPORT";
-	if (out != -1)
+	if (out != -1) {
 		actionOut = conformTimecode(out);
+	} else {
+		actionOut = INT32_MAX;
+	}
 	print("ACTION:EXPORT:START");
 }
 
