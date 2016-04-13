@@ -47,11 +47,11 @@ private:
 	int id;
 	std::shared_ptr<IDeckLink> deckLink;
 	std::shared_ptr<IDeckLinkDeckControl> deckLinkDeckControl;
+	bool opened;
 
 	bool isConnected();
 	bool connected;
 	std::mutex connected_mutex;
-	std::condition_variable connected_condition;
 
 	void worker();
 	std::recursive_mutex mutex;
@@ -62,7 +62,6 @@ private:
 	std::string lastState;
 	std::string mode;
 	std::string lastMode;
-	bool isControlMode();
 
 	long timecode;
 	long lastTimecode;

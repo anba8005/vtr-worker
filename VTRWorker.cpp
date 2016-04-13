@@ -9,6 +9,7 @@
 #include "BMDTools.h"
 #include <ctime>
 #include <cstring>
+#include <unistd.h>
 
 #define TIMECODE_MAX 2160000 // 24h @ 25fps
 
@@ -82,11 +83,21 @@ void VTRWorker::open() {
 		throw std::runtime_error("Unable to open decklink deck control");
 
 	// wait for connect
-	std::unique_lock<std::mutex> connected_lock(connected_mutex);
-	connected_condition.wait_for(connected_lock, std::chrono::milliseconds(2000));
-	if (!connected)
-		throw std::runtime_error("Unable to connect VTR");
-	connected_lock.unlock();
+	int msec = 0;
+	while (true) {
+		std::unique_lock<std::mutex> connected_lock(connected_mutex);
+		if (msec > 5000)
+			throw std::runtime_error("Unable to connect VTR");
+		if (connected)
+			break;
+		connected_lock.unlock();
+		usleep(1000);
+		msec++;
+	}
+
+	// start worker
+	opened = true;
+	thread = std::thread(&VTRWorker::worker, this);
 }
 
 void VTRWorker::close() {
@@ -104,16 +115,13 @@ void VTRWorker::close() {
 		deckLinkDeckControl.reset();
 		deckLink.reset();
 	}
+	//
+	opened = false;
 	lock.unlock();
-	std::unique_lock<std::mutex> connected_lock(connected_mutex);
-	connected = false;
-	connected_lock.unlock();
 	thread.join();
 }
 
 void VTRWorker::play() {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Play(&error) != S_OK)
@@ -123,8 +131,6 @@ void VTRWorker::play() {
 }
 
 void VTRWorker::pause() {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Stop(&error) != S_OK)
@@ -134,20 +140,17 @@ void VTRWorker::pause() {
 }
 
 void VTRWorker::stop() {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
-	if (deckLinkDeckControl->Stop(&error) != S_OK)
-		throwBMDErrorException("Error stopping decklink deck", error);
+	if (deckLinkDeckControl->Stop(&error) != S_OK) {
+		std::cerr << "WARN Error stopping decklink deck : " << bmdErrorToString(error) << std::endl;
+	}
 	seekTimecode = -1;
 	lastShuttleRate = INT8_MIN;
 	mode = "CONTROL";
 }
 
 void VTRWorker::eject() {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Eject(&error) != S_OK)
@@ -158,23 +161,20 @@ void VTRWorker::eject() {
 }
 
 void VTRWorker::shuttle(double rate) {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	if (lastShuttleRate == rate)
 		return;
 
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Shuttle(rate, &error) != S_OK) {
-		throwBMDErrorException("Error shuttling decklink deck", error);
+		std::cerr << "WARN Error shuttling decklink deck : " << bmdErrorToString(error) << std::endl;
+		lastShuttleRate = INT8_MIN;
 	} else {
 		lastShuttleRate = rate;
 	}
 }
 
 void VTRWorker::jog(double rate) {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Jog(rate, &error) != S_OK)
@@ -182,16 +182,12 @@ void VTRWorker::jog(double rate) {
 }
 
 void VTRWorker::seek(long timecode) {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	seekTimecode = timecode;
 	lastShuttleRate = INT8_MIN;
 }
 
 void VTRWorker::rew() {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->Rewind(true, &error) != S_OK)
@@ -201,8 +197,6 @@ void VTRWorker::rew() {
 }
 
 void VTRWorker::ff() {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->FastForward(true, &error) != S_OK)
@@ -212,8 +206,6 @@ void VTRWorker::ff() {
 }
 
 void VTRWorker::stepBack() {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->StepBack(&error) != S_OK)
@@ -223,8 +215,6 @@ void VTRWorker::stepBack() {
 }
 
 void VTRWorker::stepForward() {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
 	BMDDeckControlError error;
 	if (deckLinkDeckControl->StepForward(&error) != S_OK)
@@ -234,9 +224,10 @@ void VTRWorker::stepForward() {
 }
 
 void VTRWorker::startCapture(long in, long out) {
-	if (!isControlMode())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
+	if (mode != "CONTROL")
+		return;
+	std::cerr << "Starting capture " << in << " -> " << out << std::endl;
 	actionIn = conformTimecode(in);
 	actionOut = conformTimecode(out);
 	seek(conformTimecode(in - 100));
@@ -244,9 +235,8 @@ void VTRWorker::startCapture(long in, long out) {
 }
 
 void VTRWorker::startExport(long in, long out) {
-	if (!isConnected())
-		return;
 	std::unique_lock<std::recursive_mutex> lock(mutex);
+	std::cerr << "Starting export " << in << " -> " << out << std::endl;
 
 	// set export timecode (via rs422 deck command)
 	std::shared_ptr<uint8_t> timecodePtr = std::shared_ptr<uint8_t>(new uint8_t[6]);
@@ -291,15 +281,11 @@ bool VTRWorker::isConnected() {
 	return connected;
 }
 
-bool VTRWorker::isControlMode() {
-	return isConnected() && mode == "CONTROL";
-}
-
 void VTRWorker::worker() {
 	//
 	while (true) {
 		std::unique_lock<std::recursive_mutex> lock(mutex);
-		if (!isConnected())
+		if (!opened)
 			break;
 		//
 		std::unique_lock<std::mutex> bmdTimecodeLock(bmdTimecodeMutex);
@@ -450,7 +436,7 @@ HRESULT VTRWorker::VTRControlStateChanged(BMDDeckControlVTRControlState newState
 	}
 
 	if (error != bmdDeckControlNoError)
-		std::cerr << "[error] Generic error" << std::endl;
+		std::cerr << "ERROR Generic error" << std::endl;
 
 	return S_OK;
 }
@@ -476,13 +462,11 @@ HRESULT VTRWorker::DeckControlStatusChanged(BMDDeckControlStatusFlags flags, uin
 	if ((flags & bmdDeckControlStatusDeckConnected) && (flags & bmdDeckControlStatusRemoteMode)) {
 		connected = true;
 		print("CONNECTED");
-		thread = std::thread(&VTRWorker::worker, this);
-		std::cerr << "CINNECTED" << std::endl;
-	} else {
+		std::cerr << "CONNECTED" << std::endl;
+	} else if (connected) {
 		connected = false;
 		print("DISCONNECTED");
 		std::cerr << "DISCONNECTED" << std::endl;
 	}
-	connected_condition.notify_one();
 	return S_OK;
 }
